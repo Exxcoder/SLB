@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Duty Pass — Учёт увольнений</title>
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-top">
+        <div class="logo-area">
+          <div class="logo-icon">🎖</div>
+          <div class="logo-text">
+            <span class="logo-title">Duty Pass</span>
+            <span id="chat-badge" class="chat-badge">Рота #...</span>
+          </div>
+        </div>
+        <button id="refresh-btn" class="icon-btn" title="Обновить">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Live Search (Visible in Roster tab) -->
+      <div id="search-bar" class="search-bar">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Поиск по ФИО или позывному..." autocomplete="off">
+        <button id="clear-search-btn" class="clear-btn" style="display: none;">&times;</button>
+      </div>
+    </header>
+
+    <!-- Main Content Tabs -->
+    <main class="content-area">
+      <!-- Warning view if chat_id is missing -->
+      <section id="view-no-chat" class="tab-view" style="display: none;">
+        <div class="glass-card warning-card">
+          <div class="warning-icon">⚠️</div>
+          <h2>Чат не определён</h2>
+          <p>Откройте приложение через инлайн-кнопку в вашей группе Telegram, либо укажите <code>chat_id</code> в ссылке.</p>
+          <div class="manual-chat-box">
+            <input type="text" id="manual-chat-input" placeholder="Например: -100123456789">
+            <button id="manual-chat-btn" class="btn btn-primary">Войти в группу</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 1: Состав (Roster) -->
+      <section id="view-roster" class="tab-view active">
+        <!-- Quick Stats Chips -->
+        <div class="stats-chips">
+          <div class="chip">
+            <span class="chip-label">Личный состав</span>
+            <span id="chip-total-users" class="chip-value">0</span>
+          </div>
+          <div class="chip">
+            <span class="chip-label">Увалов на руках</span>
+            <span id="chip-total-uvals" class="chip-value text-accent">0</span>
+          </div>
+          <div class="chip">
+            <span class="chip-label">Среднее на бойца</span>
+            <span id="chip-avg-uvals" class="chip-value">0.0</span>
+          </div>
+        </div>
+
+        <!-- Users List -->
+        <div id="users-list" class="cards-list">
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <span>Загрузка личного состава...</span>
+          </div>
+        </div>
+
+        <div id="empty-users" class="empty-state" style="display: none;">
+          <div class="empty-icon">👥</div>
+          <h3>Состав роты пуст</h3>
+          <p>Бойцы добавляются автоматически при отправке сообщений в чат, либо вручную кнопкой «+».</p>
+          <button class="btn btn-primary add-user-trigger">+ Добавить бойца</button>
+        </div>
+      </section>
+
+      <!-- TAB 2: Мониторинг / Статистика -->
+      <section id="view-stats" class="tab-view" style="display: none;">
+        <div class="section-title">
+          <h2>Мониторинг роты</h2>
+          <span class="section-sub">Сводная аналитика увольнений</span>
+        </div>
+
+        <!-- Stat Widgets -->
+        <div class="stats-grid">
+          <div class="stat-card glass-card">
+            <div class="stat-card-header">
+              <span class="stat-card-title">В увольнении / Активно</span>
+              <span class="stat-card-icon">🏖</span>
+            </div>
+            <div id="stat-active-count" class="stat-card-num">0</div>
+            <div class="stat-card-desc">Всего выданных увольнений</div>
+          </div>
+
+          <div class="stat-card glass-card">
+            <div class="stat-card-header">
+              <span class="stat-card-title">Без увольнений</span>
+              <span class="stat-card-icon">🛡</span>
+            </div>
+            <div id="stat-zero-count" class="stat-card-num">0</div>
+            <div class="stat-card-desc">Бойцов в расположении роты</div>
+          </div>
+        </div>
+
+        <!-- Leaderboard -->
+        <div class="glass-card leaderboard-card">
+          <div class="card-header">
+            <h3>Лидеры увольнений</h3>
+            <span class="badge">Топ-5</span>
+          </div>
+          <div id="leaderboard-list" class="leaderboard-list">
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: Журнал (Logs) -->
+      <section id="view-logs" class="tab-view" style="display: none;">
+        <div class="logs-header">
+          <div>
+            <h2>Журнал событий</h2>
+            <span class="section-sub">Последние 50 записей роты</span>
+          </div>
+          <button id="clear-logs-btn" class="btn btn-danger-outline btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Очистить
+          </button>
+        </div>
+
+        <div id="logs-list" class="logs-feed">
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <span>Загрузка журнала...</span>
+          </div>
+        </div>
+
+        <div id="empty-logs" class="empty-state" style="display: none;">
+          <div class="empty-icon">📜</div>
+          <h3>Журнал пуст</h3>
+          <p>Действия по начислению и списанию увалов появятся здесь.</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Quick Add Modal Sheet -->
+    <div id="add-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-sheet glass-modal">
+        <div class="modal-header">
+          <div class="drag-handle"></div>
+          <h3>Новый боец в роту</h3>
+          <button id="close-modal-btn" class="modal-close-btn">&times;</button>
+        </div>
+        <form id="add-user-form" class="modal-form">
+          <div class="form-group">
+            <label for="new-fullname">ФИО / Позывной *</label>
+            <input type="text" id="new-fullname" required placeholder="Например: Иванов Иван (Сокол)" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="new-username">Telegram Username (без @, если есть)</label>
+            <input type="text" id="new-username" placeholder="ivanov_telegram" autocomplete="off">
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="cancel-add-btn" class="btn btn-secondary">Отмена</button>
+            <button type="submit" id="submit-add-btn" class="btn btn-primary">Добавить бойца</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast" style="display: none;"></div>
+
+    <!-- Bottom Dock Bar Navigation -->
+    <nav class="dock-bar">
+      <div class="dock-container glass-dock">
+        <button class="dock-item active" data-tab="roster">
+          <span class="dock-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </span>
+          <span class="dock-label">Состав</span>
+        </button>
+
+        <button id="quick-add-btn" class="dock-add-btn" title="Добавить бойца">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+
+        <button class="dock-item" data-tab="stats">
+          <span class="dock-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+          </span>
+          <span class="dock-label">Мониторинг</span>
+        </button>
+
+        <button class="dock-item" data-tab="logs">
+          <span class="dock-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+          </span>
+          <span class="dock-label">Журнал</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
