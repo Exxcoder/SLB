@@ -138,43 +138,38 @@ if dp:
 
         await message.answer(text, reply_markup=kb)
 
-    @dp.message(Command("stats"))
-    async def cmd_stats(message: Message) -> None:
-        """Текстовая статистика топ-15 бойцов текущей группы."""
+    @dp.message(Command("start", "uval", "menu"))
+    async def cmd_start_menu(message: Message, command: CommandObject) -> None:
         if message.from_user and message.from_user.is_bot:
             return
 
-        chat_id = message.chat.id
-        top_users = await db.get_top_stats(chat_id, limit=15)
+        chat = message.chat
+        is_group = chat.type in ("group", "supergroup")
 
-        if not top_users:
-            await message.answer(
-                "📊 <b>Статистика увольнений роты</b>
+        target_chat_id = chat.id
+        if not is_group and command.args:
+            try:
+                target_chat_id = int(command.args.strip())
+            except ValueError:
+                pass
 
-"
-                "Список личного состава пока пуст.
-"
-                "Напишите сообщения в чат или добавьте бойцов через панель /uval."
+        kb = get_panel_keyboard(target_chat_id, is_group=is_group)
+
+        if is_group:
+            chat_name = chat.title or str(chat.id)
+            text = (
+                "🎖 <b>Система учёта увольнений «Duty Pass»</b>\n\n"
+                f"Рота (Чат): <code>{chat_name}</code>\n"
+                "Нажмите кнопку ниже для перехода в интерактивную панель управления составом."
             )
-            return
+        else:
+            text = (
+                "🎖 <b>Система учёта увольнений «Duty Pass»</b>\n\n"
+                "Бот оптимизирован для работы в группах роты.\n"
+                "Добавьте бота в чат подразделения или откройте панель по кнопке ниже."
+            )
 
-        lines = ["📊 <b>Статистика увольнений роты (Топ-15)</b>
-"]
-        for idx, u in enumerate(top_users, start=1):
-            badge = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
-            name = u["full_name"]
-            uname = f" (@{u['username']})" if u.get("username") else ""
-            count = u["uval_count"]
-            limit = u.get("max_limit", 5)
-
-            # Визуальный индикатор
-            filled = min(count, limit)
-            bar = "▮" * filled + "▯" * max(0, limit - filled)
-            lines.append(f"{badge} <b>{name}</b>{uname} — <b>{count}</b> ув. [{bar}]")
-
-        kb = get_panel_keyboard(chat_id, is_group=(message.chat.type in ("group", "supergroup")))
-        await message.answer("
-".join(lines), reply_markup=kb)
+        await message.answer(text, reply_markup=kb)
 
     # Быстрый триггер в группе: ответ (Reply) на сообщение участника (+увал, -увал, +1 увал, и т.д.)
     UVAL_PATTERN = re.compile(
