@@ -37,7 +37,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("DutyPass")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "5954908959:AAEgeQxOk_zOcKmb8EQKUubtpKtz2szEn6s").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 BASE_WEBAPP_URL = os.getenv("BASE_WEBAPP_URL", "http://localhost:7860").rstrip("/")
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "7860"))
@@ -86,8 +86,8 @@ if dp:
 
     def get_panel_keyboard(chat_id: int, is_group: bool) -> InlineKeyboardMarkup:
         """
-        КРИТИЧНО: Telegram запрещает кнопки web_app в группах (BUTTON_TYPE_INVALID).
-        В группах отправляем обычную ссылку url=..., а в ЛС — web_app=WebAppInfo(...).
+        Telegram запрещает кнопки web_app в группах (BUTTON_TYPE_INVALID).
+        В группах отправляем url=..., а в ЛС — web_app=WebAppInfo(...).
         """
         target_url = f"{BASE_WEBAPP_URL}?chat_id={chat_id}"
         if is_group:
@@ -98,45 +98,6 @@ if dp:
                 web_app=WebAppInfo(url=target_url),
             )
         return InlineKeyboardMarkup(inline_keyboard=[[btn]])
-
-    @dp.message(Command("start", "uval", "menu"))
-    async def cmd_start_menu(message: Message, command: CommandObject) -> None:
-        if message.from_user and message.from_user.is_bot:
-            return
-
-        chat = message.chat
-        is_group = chat.type in ("group", "supergroup")
-
-        target_chat_id = chat.id
-        # Если команда вызвана в ЛС с аргументом (/start -10012345678)
-        if not is_group and command.args:
-            try:
-                target_chat_id = int(command.args.strip())
-            except ValueError:
-                pass
-
-        kb = get_panel_keyboard(target_chat_id, is_group=is_group)
-
-        if is_group:
-            text = (
-                "🎖 <b>Система учёта увольнений «Duty Pass»</b>
-
-"
-                f"Рота (Чат): <code>{chat.title or chat.id}</code>
-"
-                "Нажмите кнопку ниже для перехода в интерактивную панель управления составом."
-            )
-        else:
-            text = (
-                "🎖 <b>Система учёта увольнений «Duty Pass»</b>
-
-"
-                "Бот оптимизирован для работы в группах роты.
-"
-                "Добавьте бота в чат подразделения или откройте панель по кнопке ниже."
-            )
-
-        await message.answer(text, reply_markup=kb)
 
     @dp.message(Command("start", "uval", "menu"))
     async def cmd_start_menu(message: Message, command: CommandObject) -> None:
@@ -171,7 +132,40 @@ if dp:
 
         await message.answer(text, reply_markup=kb)
 
-    # Быстрый триггер в группе: ответ (Reply) на сообщение участника (+увал, -увал, +1 увал, и т.д.)
+    @dp.message(Command("stats"))
+    async def cmd_stats(message: Message) -> None:
+        """Текстовая статистика топ-15 бойцов текущей группы."""
+        if message.from_user and message.from_user.is_bot:
+            return
+
+        chat_id = message.chat.id
+        top_users = await db.get_top_stats(chat_id, limit=15)
+
+        if not top_users:
+            text = (
+                "📊 <b>Статистика увольнений роты</b>\n\n"
+                "Список личного состава пока пуст.\n"
+                "Напишите сообщения в чат или добавьте бойцов через панель /uval."
+            )
+            await message.answer(text)
+            return
+
+        lines = ["📊 <b>Статистика увольнений роты (Топ-15)</b>\n"]
+        for idx, u in enumerate(top_users, start=1):
+            badge = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
+            name = u["full_name"]
+            uname = f" (@{u['username']})" if u.get("username") else ""
+            count = u["uval_count"]
+            limit = u.get("max_limit", 5)
+
+            filled = min(count, limit)
+            bar = "▮" * filled + "▯" * max(0, limit - filled)
+            lines.append(f"{badge} <b>{name}</b>{uname} — <b>{count}</b> ув. [{bar}]")
+
+        kb = get_panel_keyboard(chat_id, is_group=(message.chat.type in ("group", "supergroup")))
+        await message.answer("\n".join(lines), reply_markup=kb)
+
+    # Быстрый триггер в группе: ответ (Reply) на сообщение участника
     UVAL_PATTERN = re.compile(
         r"^([+-])\s*(\d*)\s*(?:увал[а-яё]*|ув)$", re.IGNORECASE
     )
@@ -192,7 +186,6 @@ if dp:
         if not target_user:
             return
 
-        # Исключение ботов
         if target_user.is_bot:
             await message.reply("⚠️ Боты не могут получать или расходовать увольнения.")
             return
@@ -200,7 +193,6 @@ if dp:
         chat_id = message.chat.id
         user_id = target_user.id
 
-        # Проверка чёрного списка
         if await db.is_blacklisted(chat_id, user_id):
             await message.reply("⚠️ Боец находится в чёрном списке роты.")
             return
@@ -214,7 +206,6 @@ if dp:
             target_user.full_name or target_user.first_name or f"Боец #{target_user.id}"
         ).strip()
 
-        # Фоново актуализируем автора цели
         await db.upsert_user(
             chat_id=chat_id,
             user_id=user_id,
@@ -238,13 +229,9 @@ if dp:
         delta_sign = f"+{delta}" if delta > 0 else f"{delta}"
 
         msg = (
-            f"🎖 <b>Учёт увольнений</b>
-
-"
-            f"Боец: <b>{full_name}</b>
-"
-            f"Действие: <b>{action_verb} {delta_sign}</b> ув.
-"
+            f"🎖 <b>Учёт увольнений</b>\n\n"
+            f"Боец: <b>{full_name}</b>\n"
+            f"Действие: <b>{action_verb} {delta_sign}</b> ув.\n"
             f"Текущий остаток: <b>{new_count}</b> ув."
         )
         await message.reply(msg)
@@ -253,7 +240,6 @@ if dp:
 # --- FastAPI REST API ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Жизненный цикл приложения: инициализация БД и запуск фонового polling aiogram."""
     await db.init_db()
     logger.info(f"База данных SQLite инициализирована: {db.get_db_path()}")
 
