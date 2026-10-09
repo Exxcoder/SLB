@@ -37,7 +37,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("DutyPass")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "5954908959:AAEgeQxOk_zOcKmb8EQKUubtpKtz2szEn6s").strip()
 BASE_WEBAPP_URL = os.getenv("BASE_WEBAPP_URL", "http://localhost:7860").rstrip("/")
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "7860"))
